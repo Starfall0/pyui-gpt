@@ -1,0 +1,14 @@
+flask
+Flask-Limiter==3.10.1
+Flask-Cors==5.0.0
+pymilvus==2.4.7
+transformers
+torch
+scikit-learn
+gunicorn
+numpy
+# openai==0.28
+openai==1.100.0
+
+# Fix incompatibility (pymilvus -> environs -> marshmallow)
+marshmallow<4
