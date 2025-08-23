@@ -21,8 +21,11 @@ import signal
 import sys
 from threading import Lock
 import gc
+from dotenv import load_dotenv
+from openai import OpenAI
 
-from config import get_openai_client, MODEL_CONFIG
+# Load environment variables
+load_dotenv()
 
 # Configure structured logging
 logging.basicConfig(
@@ -35,27 +38,27 @@ logger = logging.getLogger(__name__)
 
 class Config:
     """Centralized configuration management"""
-    MILVUS_HOST = os.environ.get('MILVUS_HOST', 'milvus')
-    MILVUS_PORT = int(os.environ.get('MILVUS_PORT', 19530))
-    MILVUS_TIMEOUT = int(os.environ.get('MILVUS_TIMEOUT', 30))
+    MILVUS_HOST = os.getenv('MILVUS_HOST', 'milvus')
+    MILVUS_PORT = int(os.getenv('MILVUS_PORT', 19530))
+    MILVUS_TIMEOUT = int(os.getenv('MILVUS_TIMEOUT', 30))
     
-    EMBEDDING_MODEL = os.environ.get('EMBEDDING_MODEL', 'BAAI/bge-m3')
-    EMBEDDING_DIM = int(os.environ.get('EMBEDDING_DIM', 1024))
+    EMBEDDING_MODEL = os.getenv('EMBEDDING_MODEL', 'BAAI/bge-m3')
+    EMBEDDING_DIM = int(os.getenv('EMBEDDING_DIM', 1024))
     
-    MAX_TEXT_LENGTH = int(os.environ.get('MAX_TEXT_LENGTH', 8192))
-    MAX_QUERY_LENGTH = int(os.environ.get('MAX_QUERY_LENGTH', 512))
-    MAX_RESULTS_LIMIT = int(os.environ.get('MAX_RESULTS_LIMIT', 100))
+    MAX_TEXT_LENGTH = int(os.getenv('MAX_TEXT_LENGTH', 8192))
+    MAX_QUERY_LENGTH = int(os.getenv('MAX_QUERY_LENGTH', 512))
+    MAX_RESULTS_LIMIT = int(os.getenv('MAX_RESULTS_LIMIT', 100))
     
-    SYSTEM_PROMPT = os.environ.get('SYSTEM_PROMPT', "คุณคือ P'Yui GPT พัฒนาโดยนักศึกษาชั้นปีที่ 4")
-    
+    SYSTEM_PROMPT = os.getenv('SYSTEM_PROMPT', "คุณคือ P'Yui GPT พัฒนาโดยนักศึกษาชั้นปีที่ 4")
+
     # Security and rate limiting
-    API_KEY = os.environ.get('API_KEY', '')
-    RATE_LIMIT = os.environ.get('RATE_LIMIT', '100 per hour')
-    ENABLE_CORS = os.environ.get('ENABLE_CORS', 'false').lower() == 'true'
+    API_KEY = os.getenv('API_KEY', '')
+    RATE_LIMIT = os.getenv('RATE_LIMIT', '100 per hour')
+    ENABLE_CORS = os.getenv('ENABLE_CORS', 'false').lower() == 'true'
     
     # Performance
-    BATCH_SIZE = int(os.environ.get('BATCH_SIZE', 32))
-    CONNECTION_POOL_SIZE = int(os.environ.get('CONNECTION_POOL_SIZE', 10))
+    BATCH_SIZE = int(os.getenv('BATCH_SIZE', 32))
+    CONNECTION_POOL_SIZE = int(os.getenv('CONNECTION_POOL_SIZE', 10))
 
 class MilvusManager:
     """Thread-safe Milvus connection and collection manager"""
@@ -196,7 +199,7 @@ class EmbeddingModel:
         except Exception as e:
             logger.error(f"Embedding generation failed: {e}")
             # Return zero embeddings as fallback
-            return [np.zeros(1024, dtype=np.float32) for _ in texts]
+            return [np.zeros(config.EMBEDDING_DIM, dtype=np.float32) for _ in texts]
     
     def _mean_pooling(self, model_output, attention_mask):
         """Mean pooling with attention mask"""
@@ -508,24 +511,14 @@ def completions():
             query = query.decode('utf-8')
         query = validate_text(query, config.MAX_QUERY_LENGTH)
 
-        '''
-        {
-        "prompt": "สวัสดี",
-        "max_tokens": 128,
-        "temperature": 0.7,
-        "stream": false
-        }
-        '''
-
         # Configure logging to use UTF-8
         logger.info(f"User prompt received: {query}")
 
         stream = data.get("stream", False)
-        temperature = max(0.0, min(2.0, data.get("temperature", MODEL_CONFIG.get('temperature', 0.7))))
-        max_tokens = min(data.get("max_tokens", MODEL_CONFIG.get('max_tokens', 1000)), 4000)
-        top_p = max(0.0, min(1.0, data.get("top_p", MODEL_CONFIG.get('top_p', 0.9))))
+        temperature = max(0.0, min(2.0, data.get("temperature", float(os.getenv('TEMPERATURE', 0.7)))))
+        max_tokens = min(data.get("max_tokens", int(os.getenv('MAX_TOKENS', 1000))), 4000)
+        top_p = max(0.0, min(1.0, data.get("top_p", float(os.getenv('TOP_P', 0.9)))))
         
-        # Rest of the function remains the same but ensure UTF-8 encoding
         with milvus_manager.get_collection() as collection:
             if collection.num_entities == 0:
                 return Response(
@@ -606,9 +599,13 @@ def completions():
             logger.info(f"Prompt: {system_message}\n{user_message}")
             
             # Generate response
-            openai_client = get_openai_client()
+            openai_client = OpenAI(
+                api_key=os.getenv('OPENAI_API_KEY'),
+                base_url=os.getenv('OPENAI_BASE_URL', 'https://api.opentyphoon.ai/v1')
+            )
+
             response = openai_client.chat.completions.create(
-                model=MODEL_CONFIG.get('model', 'typhoon-v2-70b-instruct'),
+                model=os.getenv('OPENAI_MODEL', 'typhoon-v2-70b-instruct'),
                 messages=[
                     {"role": "system", "content": system_message},
                     {"role": "user", "content": user_message}
@@ -616,7 +613,7 @@ def completions():
                 max_tokens=max_tokens,
                 temperature=temperature,
                 top_p=top_p,
-                stop=MODEL_CONFIG.get('stop'),
+                stop=["<|im_end|>"],
                 stream=stream
             )
             

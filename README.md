@@ -28,8 +28,8 @@ Meet P'Yui GPT - your friendly Thai language assistant! We've created this open-
 
 2. **Configure API credentials:**
    ```bash
-   cp app/configExample.py app/config.py
-   # Edit app/config.py with your API credentials
+   cp .env.example .env
+   # Edit .env with your API credentials
    ```
 
 3. **Start the services:**
@@ -49,14 +49,14 @@ The API will be available at `http://localhost:5001`
 ```
 pyui-gpt/
 ├── app/
-│   ├── web.py              # Main Flask application
-│   ├── config.py           # API configuration
 │   ├── index_docs.py       # Document indexing script
-│   └── query_rag_using_openai.py  # OpenAI client example
+│   ├── query_rag_using_openai.py  # OpenAI client example
+│   └── web.py              # Main Flask application
 ├── docs/                   # Sample documents for indexing
+├── .env                    # Environment variables
 ├── docker-compose.yml      # Container orchestration
-├── Dockerfile             # Web service container
-└── requirements.txt       # Python dependencies
+├── Dockerfile              # Web service container
+└── requirements.txt        # Python dependencies
 ```
 
 ## 🔧 Configuration
@@ -69,17 +69,17 @@ pyui-gpt/
 | `MILVUS_PORT` | `19530` | Milvus database port |
 | `OPENAI_API_KEY` | - | Your Typhoon/OpenAI API key |
 | `OPENAI_BASE_URL` | `https://api.opentyphoon.ai/v1` | API base URL |
-| `OPENAI_MODEL` | `typhoon-v2-70b-instruct` | Model name |
-| `SYSTEM_PROMPT` | `<|im_start|>ี่ 4` | System prompt for responses |
+| `OPENAI_MODEL` | `typhoon-v2.1-12b-instruct` | Model name |
+| `SYSTEM_PROMPT` | `คุณคือ P'Yui GPT พัฒนาโดยนักศึกษาชั้นปีที่ 4` | System prompt for responses |
 
 ### API Configuration
 
-Edit `app/config.py`:
+Edit `.env`:
 
 ```python
 OPENAI_API_KEY = 'your-api-key-here'
 OPENAI_BASE_URL = 'https://api.opentyphoon.ai/v1'
-OPENAI_MODEL = 'typhoon-v2-70b-instruct'
+OPENAI_MODEL = 'typhoon-v2.1-12b-instruct'
 ```
 
 ## 📚 API Documentation
@@ -135,7 +135,7 @@ Content-Type: application/json
 |-----------|------|---------|-------------|
 | `prompt` | string | **required** | Input question/prompt |
 | `max_tokens` | integer | 1000 | Maximum response length (up to 4000) |
-| `temperature` | float | 0.7 | Randomness control (0.0-2.0) |
+| `temperature` | float | 0.7 | Randomness control (0.0-1.0) |
 | `top_p` | float | 0.9 | Nucleus sampling (0.0-1.0) |
 | `stream` | boolean | false | Enable streaming response |
 
@@ -179,7 +179,7 @@ curl -X POST http://localhost:5001/completions \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "สวัสดี",
-    "max_tokens": 2048,
+    "max_tokens": 1024,
     "temperature": 0.7
   }'
 ```
@@ -271,17 +271,6 @@ python app/web.py
 python app/index_docs.py
 ```
 
-## 📚 API Example
-
-```
-curl --location 'http://localhost:5001/completions' --header 'Content-Type: application/json' --data '{
-    "prompt": "สวัสดี",
-    "max_tokens": 128,
-    "temperature": 0.7,
-    "stream": false
-}'
-```
-
 ## 📄 License
 
 Apache 2.0
@@ -314,7 +303,7 @@ Apache 2.0
 
 4. **API key errors**
    ```bash
-   # Verify your config.py has valid credentials
+   # Verify your .env has valid credentials
    # Check OPENAI_API_KEY environment variable
    ```
 
@@ -322,5 +311,5 @@ Apache 2.0
 
 - Check the health endpoint: `GET /health`
 - Review container logs: `docker-compose logs web`
-- Verify API credentials in `app/config.py`
+- Verify API credentials in `.env`
 - Ensure sufficient system resources (4GB+ RAM)

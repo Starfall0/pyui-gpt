@@ -1,12 +1,18 @@
-import openai
-from config import get_openai_client, MODEL_CONFIG
+import os
+from dotenv import load_dotenv
+from openai import OpenAI
 
-# Initialize OpenAI client
-openai_client = get_openai_client()
+# Load environment variables
+load_dotenv()
+
+openai_client = OpenAI(
+    api_key=os.getenv('OPENAI_API_KEY'),
+    base_url=os.getenv('OPENAI_BASE_URL', 'https://api.opentyphoon.ai/v1')
+)
 
 prompt = "สวัสดี"
 
-model = "typhoon-v2-70b-instruct" # Specify the model you're using with vLLM
+model = "typhoon-v2.1-12b-instruct" # Specify the model you're using with vLLM
 
 # Non-Streaming Response
 def response(prompt):

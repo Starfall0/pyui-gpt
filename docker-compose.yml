@@ -8,10 +8,8 @@ services:
     volumes:
       - ./app:/app
       - ~/.cache:/root/.cache
-    environment:
-      - MILVUS_HOST=milvus
-      - MILVUS_PORT=19530
-      - SYSTEM_PROMPT=คุณคือ P'Yui GPT พัฒนาโดยนักศึกษาชั้นปีที่ 4
+    env_file:
+      - .env
     depends_on:
       - milvus
 

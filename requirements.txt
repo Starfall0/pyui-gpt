@@ -7,8 +7,8 @@ torch
 scikit-learn
 gunicorn
 numpy
-# openai==0.28
 openai==1.100.0
+python-dotenv
 
 # Fix incompatibility (pymilvus -> environs -> marshmallow)
 marshmallow<4
