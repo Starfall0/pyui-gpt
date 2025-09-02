@@ -50,15 +50,12 @@ class Config:
     MAX_RESULTS_LIMIT = int(os.getenv('MAX_RESULTS_LIMIT', 100))
     
     SYSTEM_PROMPT = os.getenv('SYSTEM_PROMPT', "คุณคือ P'Yui GPT พัฒนาโดยนักศึกษาชั้นปีที่ 4")
+    TOP_K = int(os.getenv('TOP_K', 2))
 
     # Security and rate limiting
     API_KEY = os.getenv('API_KEY', '')
     RATE_LIMIT = os.getenv('RATE_LIMIT', '100 per hour')
     ENABLE_CORS = os.getenv('ENABLE_CORS', 'false').lower() == 'true'
-    
-    # Performance
-    BATCH_SIZE = int(os.getenv('BATCH_SIZE', 32))
-    CONNECTION_POOL_SIZE = int(os.getenv('CONNECTION_POOL_SIZE', 10))
 
 class MilvusManager:
     """Thread-safe Milvus connection and collection manager"""
@@ -87,6 +84,7 @@ class MilvusManager:
             except Exception as e:
                 logger.error(f"Milvus connection attempt {attempt + 1} failed: {e}")
                 if attempt == max_retries - 1:
+                    logger.exception("Exception occurred in track_metrics decorator")
                     raise
                 time.sleep(2 ** attempt)  # Exponential backoff
     
@@ -212,6 +210,11 @@ config = Config()
 milvus_manager = MilvusManager(config)
 embedding_model = EmbeddingModel(config.EMBEDDING_MODEL)
 
+# Pre-load embedding model (optional, for faster first request)
+if os.environ.get('PRELOAD_MODEL', 'false').lower() == 'true':
+    logger.info("Pre-loading embedding model...")
+    embedding_model._load_model()
+
 # Flask app setup
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
@@ -266,7 +269,11 @@ def require_api_key(f):
     return decorated_function
 
 def track_metrics(f):
-    """Metrics tracking decorator"""
+    """
+    Metrics tracking decorator.
+
+    Note: This decorator will re-raise any exceptions from the wrapped function after recording metrics.
+    """
     @wraps(f)
     def decorated_function(*args, **kwargs):
         start_time = time.time()
@@ -292,12 +299,6 @@ def validate_text(text: str, max_length: int) -> str:
         raise BadRequest(f"Text too long. Maximum {max_length} characters allowed")
     
     return text
-
-def validate_pagination(limit: Optional[int], offset: Optional[int]) -> Tuple[int, int]:
-    """Validate pagination parameters"""
-    limit = min(limit or 10, config.MAX_RESULTS_LIMIT)
-    offset = max(offset or 0, 0)
-    return limit, offset
 
 # Enhanced routes with error handling
 @app.route("/health", methods=["GET"])
@@ -388,7 +389,7 @@ def index_text():
         }), 201
         
     except BadRequest as e:
-        return jsonify({"error": str(e)}), 400
+        return jsonify({"error": "Client error", "message": str(e)}), 400
     except Exception as e:
         logger.error(f"Indexing failed: {e}")
         return jsonify({"error": "Internal server error"}), 500
@@ -489,15 +490,12 @@ def search_documents():
 def completions():
     """Enhanced RAG completions with better error handling"""
     try:
-        # Set request encoding to UTF-8
-        request.encoding = 'utf-8'
-        
         # Get JSON data with explicit UTF-8 encoding
         if request.is_json:
             data = request.get_json(force=True)
         else:
             try:
-                data = json.loads(request.data.decode('utf-8'))
+                data = request.get_json()
             except (UnicodeDecodeError, json.JSONDecodeError) as e:
                 logger.error(f"JSON decode error: {e}")
                 raise BadRequest("Invalid JSON or encoding")
@@ -568,17 +566,18 @@ def completions():
                             'id': str(hit.id),
                             'text': text,
                             'score': float(hit.distance),
-                            'metadata': getattr(entity, 'metadata', {})
+                            'metadata': getattr(entity, 'metadata', {}) if entity else {}
                         })
                         doc_embeddings.append(embedding)
             
+            num_retrieves = config.TOP_K
             # Rerank and select top documents
             if doc_embeddings and len(doc_embeddings) > 1:
                 similarities = cosine_similarity([query_embedding], doc_embeddings)[0]
                 ranked_indices = np.argsort(similarities)[::-1]
-                top_docs = [retrieved_docs[i] for i in ranked_indices[:5]]
+                top_docs = [retrieved_docs[i] for i in ranked_indices[:num_retrieves]]
             else:
-                top_docs = retrieved_docs[:5]
+                top_docs = retrieved_docs[:num_retrieves]
             
             if not top_docs:
                 return Response(
@@ -593,8 +592,8 @@ def completions():
             context = "\n\n".join([doc['text'] for doc in top_docs])
             
             # Prepare messages with UTF-8 encoding
-            system_message = f"ช่วยตอบคำถามอย่างชาญฉลาดและแม่นยำ {config.SYSTEM_PROMPT}"
-            user_message = f"จากเอกสารต่อไป:\n\n{context}\n\nจงตอบคำถาม: {query}"
+            system_message = f"{config.SYSTEM_PROMPT}"
+            user_message = f"### Context\nจากเอกสารต่อไปนี้:\n\n{context}\n\n### Instruction\nจงตอบคำถาม: {query}"
 
             logger.info(f"Prompt: {system_message}\n{user_message}")
             
@@ -637,6 +636,8 @@ def completions():
                 return Response(generate(), mimetype="text/event-stream; charset=utf-8")
             else:
                 response_content = response.choices[0].message.content
+                if response_content is None:
+                    response_content = "No response generated by the model."
                 if isinstance(response_content, bytes):
                     response_content = response_content.decode('utf-8')
                     
@@ -653,7 +654,7 @@ def completions():
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         logger.error(f"Completion failed: {e}")
-        return jsonify({"error": "Internal server error"}), 500
+        return jsonify({"error": "Internal server error", "message": "A server-side error occurred. Please try again later."}), 500
 
 @app.route("/delete/<doc_id>", methods=["DELETE"])
 @require_api_key
