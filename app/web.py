@@ -689,61 +689,6 @@ def delete_documents(doc_id: str):
         logger.error(f"Delete failed: {e}")
         return jsonify({"error": "Internal server error"}), 500
 
-@app.route("/list", methods=["GET"])
-@require_api_key
-@track_metrics
-def list_documents():
-    """List documents with pagination and filtering"""
-    try:
-        query_filter = request.args.get('query', '').strip()
-        limit, offset = validate_pagination(
-            request.args.get('limit', type=int),
-            request.args.get('offset', type=int)
-        )
-        
-        with milvus_manager.get_collection() as collection:
-            # Build expression
-            expr = f"text like '%{query_filter}%'" if query_filter else None
-            
-            results = collection.query(
-                expr=expr,
-                output_fields=["id", "text", "created_at", "metadata"],
-                offset=offset,
-                limit=limit
-            )
-            
-            documents = []
-            for doc in results:
-                text = doc.get('text', '')
-                if isinstance(text, bytes):
-                    text = text.decode('utf-8', errors='replace')
-                
-                # Truncate long text for listing
-                display_text = text[:200] + "..." if len(text) > 200 else text
-                
-                documents.append({
-                    "id": str(doc['id']),
-                    "text": display_text,
-                    "created_at": doc.get('created_at', 0),
-                    "metadata": doc.get('metadata', {}),
-                    "length": len(text)
-                })
-
-             # Log the number of documents retrieved
-            logger.info(f"Retrieved {len(documents)} documents")
-            
-            return jsonify({
-                "documents": documents,
-                "total_returned": len(documents),
-                "offset": offset,
-                "limit": limit,
-                "query_filter": query_filter
-            })
-            
-    except Exception as e:
-        logger.error(f"List documents failed: {e}")
-        return jsonify({"error": "Internal server error"}), 500
-
 # Error handlers
 @app.errorhandler(400)
 def bad_request(error):
